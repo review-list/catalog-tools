@@ -1,0 +1,29 @@
+name: debug-viewer
+
+# ページ送りが効かない原因の切り分け用。使い捨て。
+on:
+  workflow_dispatch:
+    inputs:
+      cid:
+        description: "content_id（省略で先頭の作品）"
+        required: false
+        default: ""
+        type: string
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r capture/requirements.txt
+      - run: python -m playwright install --with-deps chromium
+      - name: Debug
+        env:
+          DMM_API_ID: ${{ secrets.DMM_API_ID }}
+          DMM_AFFILIATE_ID: ${{ secrets.DMM_AFFILIATE_ID }}
+          TARGETS: ${{ secrets.TARGETS }}
+        run: python capture/debug_viewer.py --cid "${{ inputs.cid }}"

@@ -145,9 +145,16 @@ def _screenshot_pages(tachiyomi_url: str, retry: int = 0) -> list[bytes]:
         context = browser.new_context(
             viewport={"width": 1200, "height": 2000},
         )
+        # 年齢確認ゲートを抜けるためのクッキー。
+        # FANZA のビューアは book.dmm.co.jp、DMM.com一般は book.dmm.com と
+        # ドメインが違うので、両方に入れないと片方で弾かれる。
         context.add_cookies([
             {"name": "age_check_done", "value": "1", "domain": ".dmm.co.jp", "path": "/"},
             {"name": "cklg", "value": "ja", "domain": ".dmm.co.jp", "path": "/"},
+            {"name": "age_check_done", "value": "1", "domain": ".dmm.com", "path": "/"},
+            {"name": "cklg", "value": "ja", "domain": ".dmm.com", "path": "/"},
+            {"name": "ckcy", "value": "1", "domain": ".dmm.co.jp", "path": "/"},
+            {"name": "ckcy", "value": "1", "domain": ".dmm.com", "path": "/"},
         ])
         page = context.new_page()
 

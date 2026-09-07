@@ -146,6 +146,24 @@ def fetch_candidates(target: Dict[str, str], pages: int) -> List[Tuple[str, str]
     return list(out.items())
 
 
+def direct_url(u: str) -> str:
+    """撮影に使う「直接」URLを返す。
+
+    APIが返すのは al.fanza.co.jp / al.dmm.com のアフィリエイト用リダイレクトURLで、
+    実体は lurl パラメータに入っている。Playwright でリダイレクトを踏ませると
+    ページ送りが効かず1枚しか撮れなかったため、撮影時は展開した実URLを直接開く。
+    （アフィリエイトIDが必要なのは利用側が出すリンクであって、撮影には要らない）
+    """
+    try:
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(u).query)
+        lurl = (q.get("lurl") or [""])[0]
+        if lurl:
+            return urllib.parse.unquote(lurl)
+    except Exception:
+        pass
+    return u
+
+
 def load_index(s3) -> Dict[str, Any]:
     try:
         o = s3.get_object(Bucket=core.R2_BUCKET, Key=INDEX_KEY)
@@ -229,7 +247,7 @@ def main() -> None:
     ok = ng = 0
     for i, (cid, tach) in enumerate(todo, 1):
         try:
-            shots = core._screenshot_pages(tach)
+            shots = core._screenshot_pages(direct_url(tach))
         except Exception as e:
             print(f"[capture] {i}/{len(todo)} {cid} 撮影失敗: {str(e)[:60]}")
             ng += 1

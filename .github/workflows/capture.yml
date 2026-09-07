@@ -55,10 +55,12 @@ jobs:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_PUBLIC_BASE: ${{ secrets.R2_PUBLIC_BASE }}
-          R2_BUCKET: ${{ vars.R2_BUCKET }}
-          TARGETS: ${{ vars.TARGETS }}
-          KEY_PREFIX: ${{ vars.KEY_PREFIX }}
-          INDEX_KEY: ${{ vars.INDEX_KEY }}
+          # public リポジトリでは Variables の値が誰でも見える。
+          # バケット名も対象フロアも「どのサイト向けか」の手がかりになるので Secrets に置く。
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          TARGETS: ${{ secrets.TARGETS }}
+          KEY_PREFIX: ${{ secrets.KEY_PREFIX }}
+          INDEX_KEY: ${{ secrets.INDEX_KEY }}
         run: |
           MAX="${{ inputs.max_works }}"; [ -z "$MAX" ] && MAX=300
           PG="${{ inputs.pages }}"; [ -z "$PG" ] && PG=5

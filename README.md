@@ -40,9 +40,9 @@ DMM の商品情報API は電子書籍について `tachiyomi.affiliateURL`（�
 | `CLOUDFLARE_ACCOUNT_ID` | secret | エンドポイントの組み立て |
 | `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | secret | ストレージ認証 |
 | `R2_PUBLIC_BASE` | secret | 公開URLのベース |
-| `R2_BUCKET` | variable | 保存先バケット |
-| `TARGETS` | variable | 対象フロアのJSON配列 |
-| `KEY_PREFIX` / `INDEX_KEY` | variable | キーの接頭辞・索引名（省略可） |
+| `R2_BUCKET` | secret | 保存先バケット |
+| `TARGETS` | secret | 対象フロアのJSON配列 |
+| `KEY_PREFIX` / `INDEX_KEY` | secret | キーの接頭辞・索引名（省略可） |
 
 `TARGETS` の例:
 

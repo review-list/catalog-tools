@@ -1,0 +1,67 @@
+name: capture
+
+on:
+  schedule:
+    # JST 04:00 毎日。public リポジトリなので Actions 分数の制限は無い。
+    - cron: '0 19 * * *'
+  workflow_dispatch:
+    inputs:
+      max_works:
+        description: "1回の撮影上限"
+        required: false
+        default: "300"
+        type: string
+      pages:
+        description: "APIを何ページ見るか(1ページ100件)"
+        required: false
+        default: "5"
+        type: string
+      dry_run:
+        description: "撮影せず対象だけ数える"
+        required: false
+        default: false
+        type: boolean
+
+# 同時に走らせない。index を上書きし合って壊れる。
+concurrency:
+  group: capture
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    # 撮影は1件約40秒。300件で約3.5時間。6時間上限の手前で切る。
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r capture/requirements.txt
+
+      - name: Install Playwright Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Capture
+        env:
+          DMM_API_ID: ${{ secrets.DMM_API_ID }}
+          DMM_AFFILIATE_ID: ${{ secrets.DMM_AFFILIATE_ID }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_PUBLIC_BASE: ${{ secrets.R2_PUBLIC_BASE }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+          TARGETS: ${{ vars.TARGETS }}
+          KEY_PREFIX: ${{ vars.KEY_PREFIX }}
+          INDEX_KEY: ${{ vars.INDEX_KEY }}
+        run: |
+          MAX="${{ inputs.max_works }}"; [ -z "$MAX" ] && MAX=300
+          PG="${{ inputs.pages }}"; [ -z "$PG" ] && PG=5
+          DRY=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then DRY="--dry-run"; fi
+          python capture/capture.py --max "$MAX" --pages "$PG" $DRY

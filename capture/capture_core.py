@@ -216,27 +216,36 @@ def _screenshot_pages(tachiyomi_url: str, retry: int = 0) -> list[bytes]:
                     pass
 
                 shot = None
-                # canvas の bounding box を取得してクリップ撮影（余白除去）
                 small_canvas = False
+                # ★ビューアは canvas を複数持ち、画面外に控えを並べている
+                #   （実測: 4個のうち3個が x=-1200 の位置にいる）。
+                #   query_selector("canvas") は DOM順の先頭を返すだけなので、
+                #   ページ送り後に画面外の canvas を掴むと
+                #   page.screenshot(clip=負の座標) が失敗し、1枚で打ち切られていた。
+                #   → **ビューポート内にある canvas** を選び、要素自身を撮る。
+                #   element.screenshot() は座標計算を自前でやらずに済む。
                 try:
-                    canvas = page.query_selector("canvas")
-                    if canvas and canvas.is_visible():
-                        box = canvas.bounding_box()
-                        if box:
-                            # canvas が小さい場合は販売促進ページなので終了
+                    vw = (page.viewport_size or {}).get("width") or 1200
+                    for c in page.query_selector_all("canvas"):
+                        try:
+                            if not c.is_visible():
+                                continue
+                            box = c.bounding_box()
+                            if not box:
+                                continue
+                            # 画面外（左右どちらか）は控えの canvas。飛ばす。
+                            if box["x"] + box["width"] <= 1 or box["x"] >= vw - 1:
+                                continue
+                            # 小さい canvas は販売促進ページ
                             if box["width"] < 500 or box["height"] < 500:
                                 small_canvas = True
-                            elif box["width"] > 100 and box["height"] > 100:
-                                shot = page.screenshot(
-                                    type="jpeg",
-                                    quality=85,
-                                    clip={
-                                        "x": box["x"],
-                                        "y": box["y"],
-                                        "width": box["width"],
-                                        "height": box["height"],
-                                    },
-                                )
+                                continue
+                            if box["width"] > 100 and box["height"] > 100:
+                                shot = c.screenshot(type="jpeg", quality=85)
+                                small_canvas = False
+                                break
+                        except Exception:
+                            continue
                 except Exception:
                     pass
 

@@ -88,6 +88,44 @@ def _trim_margins(data: bytes) -> bytes:
         return data
 
 
+# 画像は WebP で保存する。
+#
+# 2026-09-09 に R2 の使用量を測ったところ、試し読み画像だけで 1.92 GB あり、
+# 1作品 3.03 MB（6.3枚 × 約330KB）だった。catalog-2 の全9,233作品を撮ると
+# 28 GB になり、無料枠10GBの3倍。実測で WebP q80 は JPEG q85 の 49%（51%減）
+# だったので、28 GB → 約14 GB になる。
+#
+# 品質の他に、ページの表示速度が上がるという利点もある。試し読み画像を
+# 増やすのはインデックス率を上げるためなので、そこで速度を落としては本末転倒。
+#
+# q85=41%減 / q80=51%減 / q75=59%減 を実測して 80 を選んだ。
+# 漫画は文字が絵の一部なので、落としすぎるとセリフが潰れる。
+WEBP_QUALITY = int(os.getenv("WEBP_QUALITY") or "80")
+
+
+def _to_webp(data: bytes) -> tuple[bytes, str, str]:
+    """WebP に変換して (バイト列, 拡張子, ContentType) を返す。
+
+    変換に失敗したら元のまま JPEG として返す。撮れた画像を捨てるより、
+    大きくても保存する方がよい（撮り直しは1件43秒かかる）。
+    """
+    try:
+        from PIL import Image
+        import io
+
+        img = Image.open(io.BytesIO(data)).convert("RGB")
+        out = io.BytesIO()
+        img.save(out, format="WEBP", quality=WEBP_QUALITY, method=6)
+        b = out.getvalue()
+        if b and len(b) < len(data):
+            return b, "webp", "image/webp"
+        # 稀に WebP の方が大きくなることがある。その時は元を使う。
+        return data, "jpg", "image/jpeg"
+    except Exception as e:
+        print(f"  [webp skip] {e}")
+        return data, "jpg", "image/jpeg"
+
+
 def _looks_like_loading_or_blank(data: bytes) -> bool:
     """Drop viewer loading screens and nearly blank captures."""
     try:
@@ -304,12 +342,13 @@ def _screenshot_pages(tachiyomi_url: str, retry: int = 0) -> list[bytes]:
 
 def _upload(s3, content_id: str, idx: int, data: bytes, prefix: str = "") -> str:
     """R2 にアップロードして公開 URL を返す"""
-    key = f"{prefix}{content_id}/sample_{idx}.jpg"
+    body, ext, ctype = _to_webp(data)
+    key = f"{prefix}{content_id}/sample_{idx}.{ext}"
     s3.put_object(
         Bucket=R2_BUCKET,
         Key=key,
-        Body=data,
-        ContentType="image/jpeg",
+        Body=body,
+        ContentType=ctype,
     )
     return f"{R2_PUBLIC}/{key}"
 

@@ -2,14 +2,27 @@ name: capture
 
 on:
   schedule:
-    # JST 04:00 毎日。public リポジトリなので Actions 分数の制限は無い。
-    - cron: '0 19 * * *'
+    # 1日4回。public リポジトリなので Actions 分数の制限は無い。
+    #
+    # 並列化ではなく回数を増やしている。撮影済みの索引は R2 上の1ファイルを
+    # read-modify-write するので、同時に走らせると上書きし合って壊れる
+    # （下の concurrency がそれを防いでいる）。回数を増やす形なら
+    # concurrency が自動で直列化するため索引は安全。
+    #
+    # DMM への瞬間的な負荷も変わらない（どの時点でも撮影は1件ずつ）。
+    # 過去に4並列でAPIキーをブロックされた前例があるので、同時接続は増やさない。
+    #
+    # 1回400件＝約4.8時間。6時間ずつ空けてあるので重ならない。
+    - cron: '0 19 * * *'   # JST 04:00
+    - cron: '0  1 * * *'   # JST 10:00
+    - cron: '0  7 * * *'   # JST 16:00
+    - cron: '0 13 * * *'   # JST 22:00
   workflow_dispatch:
     inputs:
       max_works:
         description: "1回の撮影上限"
         required: false
-        default: "300"
+        default: "400"
         type: string
       pages:
         description: "APIを何ページ見るか(1ページ100件)"
@@ -30,7 +43,8 @@ concurrency:
 jobs:
   capture:
     runs-on: ubuntu-latest
-    # 撮影は1件約40秒。300件で約3.5時間。6時間上限の手前で切る。
+    # 撮影は1件約43秒。400件で約4.8時間。6時間上限の手前で切る。
+    # 索引は20件ごとに保存するので、時間切れで落ちてもそこまでの成果は残る。
     timeout-minutes: 330
     steps:
       - uses: actions/checkout@v4
@@ -62,7 +76,7 @@ jobs:
           KEY_PREFIX: ${{ secrets.KEY_PREFIX }}
           INDEX_KEY: ${{ secrets.INDEX_KEY }}
         run: |
-          MAX="${{ inputs.max_works }}"; [ -z "$MAX" ] && MAX=300
+          MAX="${{ inputs.max_works }}"; [ -z "$MAX" ] && MAX=400
           PG="${{ inputs.pages }}"; [ -z "$PG" ] && PG=5
           DRY=""
           if [ "${{ inputs.dry_run }}" = "true" ]; then DRY="--dry-run"; fi

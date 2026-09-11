@@ -107,8 +107,18 @@ def _targets() -> List[Dict[str, str]]:
 def fetch_candidates(target: Dict[str, str], pages: int) -> List[Tuple[str, str]]:
     """(content_id, tachiyomi_url) を集める。
 
-    新着(date)とランキング(rank)の両方を見る。古い作品まで遡る必要は無い
-    ―― 撮影済みは index に残るので、回を重ねれば自然に埋まっていく。
+    新着(date)とランキング(rank)の両方を見る。
+
+    ★ 2026-09-11: 以前は pages=5(=新着上位500件)で打ち切っていたが、これだと
+    「新着500件」の枠は日々の新規追加で1週間ほどで入れ替わるため、公開から
+    1週間経ってランキング外の作品は候補に二度と出てこない恒久的な穴になっていた
+    （実測: 試し読みありの7,104件中、画像を持つのは905件＝13%）。
+    「撮影済みはindexに残るので回を重ねれば自然に埋まる」は誤りで、
+    そもそも候補にすら上がっていなかった。
+
+    pages はAPIのoffset上限50,000件に届くまで大きく取る。空になった時点で
+    自動的に打ち切るので（下のbreak）、フロアの実サイズを超えるコストはかからない。
+    重いのは撮影(1件約40秒)であって一覧取得ではないので、一覧を広く見ること自体は安価。
     """
     out: Dict[str, str] = {}
     for sort in ("date", "rank"):
@@ -187,7 +197,9 @@ def save_index(s3, idx: Dict[str, Any]) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description="試し読みビューアを撮影して R2 に置く")
     ap.add_argument("--max", type=int, default=MAX_WORKS, help="1回の撮影上限")
-    ap.add_argument("--pages", type=int, default=5, help="APIを何ページ見るか(1ページ100件)")
+    ap.add_argument("--pages", type=int, default=500,
+                     help="APIを何ページ見るか(1ページ100件)。offset>50000で自動打ち切りなので"
+                          "大きくしてもフロアの実サイズ以上のコストは掛からない")
     ap.add_argument("--dry-run", action="store_true", help="撮影も保存もしない")
     args = ap.parse_args()
 

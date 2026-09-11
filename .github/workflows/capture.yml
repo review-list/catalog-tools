@@ -22,6 +22,11 @@ on:
     # 容量: WebP 化で1作品 3.03MB → 1.49MB になった（5211bda）。
     # 1,600件/日 = 2.4 GB/日。catalog-2 の残り8,600件で +12.8 GB。
     # R2 は課金を有効にしてあるので、超過分は $0.015/GB・月（16.5GBで月15円）。
+    #
+    # ★ 2026-09-11: pages の既定を 5→500 に変更。旧来の「新着上位500件だけ見れば
+    # 回を重ねて自然に埋まる」という設計は誤りで、公開から1週間ほどでランキング外の
+    # 作品が候補から永久に外れる穴になっていた（試し読みあり7,104件中画像13%で発覚）。
+    # 一覧取得は空になれば自動で打ち切るので、大きくしてもフロアの実サイズ以上には伸びない。
     - cron: '0 19 * * *'   # JST 04:00
     - cron: '0  1 * * *'   # JST 10:00
     - cron: '0  7 * * *'   # JST 16:00
@@ -34,9 +39,9 @@ on:
         default: "400"
         type: string
       pages:
-        description: "APIを何ページ見るか(1ページ100件)"
+        description: "APIを何ページ見るか(1ページ100件)。500=offset上限まで(空になれば自動打ち切り)"
         required: false
-        default: "5"
+        default: "500"
         type: string
       dry_run:
         description: "撮影せず対象だけ数える"
@@ -86,7 +91,7 @@ jobs:
           INDEX_KEY: ${{ secrets.INDEX_KEY }}
         run: |
           MAX="${{ inputs.max_works }}"; [ -z "$MAX" ] && MAX=400
-          PG="${{ inputs.pages }}"; [ -z "$PG" ] && PG=5
+          PG="${{ inputs.pages }}"; [ -z "$PG" ] && PG=500
           DRY=""
           if [ "${{ inputs.dry_run }}" = "true" ]; then DRY="--dry-run"; fi
           python capture/capture.py --max "$MAX" --pages "$PG" $DRY

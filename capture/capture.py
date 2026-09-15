@@ -47,6 +47,9 @@ public リポジトリは Actions が無制限なので、重い撮影だけを�
     KEY_PREFIX                        R2キーの接頭辞（省略可）
     INDEX_KEY                         インデックスのキー（既定 samples_index.json）
     MAX_WORKS                         1回の撮影上限（既定 300）
+    CANDIDATE_CACHE_HOURS             候補一覧のキャッシュを使う時間（既定 20）
+    FRESH_PAGES                       キャッシュ利用時に取り直す新着のページ数（既定 5）
+    TIME_BUDGET_MIN                   プロセス開始からこの分数を過ぎたら撮影を打ち切る（既定 300）
 
 TARGETS の例:
 
@@ -57,6 +60,7 @@ TARGETS の例:
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import os
 import sys
@@ -82,6 +86,14 @@ MAX_WORKS = int(os.getenv("MAX_WORKS") or "300")
 API_HITS = 100
 API_SLEEP = 0.4
 
+# 全件の候補一覧は3フロアで約3,000リクエスト・約2時間かかる（2026-09-15 実測）。
+# 毎回取り直すと 330分のジョブ上限に当たって撮影が中断するので、R2 に1日1回ぶんだけ保存して使い回す。
+CANDIDATE_CACHE_HOURS = float(os.getenv("CANDIDATE_CACHE_HOURS") or "20")
+FRESH_PAGES = int(os.getenv("FRESH_PAGES") or "5")
+# ジョブの timeout-minutes(330) より先に自分で止め、索引を保存して正常終了する（準備に数分かかる分を残す）
+TIME_BUDGET_MIN = float(os.getenv("TIME_BUDGET_MIN") or "300")
+_T_START = time.time()
+
 
 def _now() -> str:
     return datetime.now(JST).isoformat(timespec="seconds")
@@ -104,8 +116,9 @@ def _targets() -> List[Dict[str, str]]:
     return [x for x in t if isinstance(x, dict) and x.get("floor")]
 
 
-def fetch_candidates(target: Dict[str, str], pages: int) -> List[Tuple[str, str]]:
-    """(content_id, tachiyomi_url) を集める。
+def fetch_candidates(target: Dict[str, str], pages: int,
+                     sorts: Tuple[str, ...] = ("date", "rank")) -> Tuple[List[Tuple[str, str]], bool]:
+    """(content_id, tachiyomi_url) の一覧と、API失敗なしで取り切れたかを返す。
 
     新着(date)とランキング(rank)の両方を見る。
 
@@ -121,7 +134,8 @@ def fetch_candidates(target: Dict[str, str], pages: int) -> List[Tuple[str, str]
     重いのは撮影(1件約40秒)であって一覧取得ではないので、一覧を広く見ること自体は安価。
     """
     out: Dict[str, str] = {}
-    for sort in ("date", "rank"):
+    complete = True
+    for sort in sorts:
         for page in range(pages):
             offset = 1 + page * API_HITS
             if offset > 50000:
@@ -139,6 +153,7 @@ def fetch_candidates(target: Dict[str, str], pages: int) -> List[Tuple[str, str]
                     d = json.loads(r.read().decode("utf-8"))
             except Exception as e:
                 print(f"[capture]   API失敗 {target['floor']}/{sort}/{offset}: {str(e)[:60]}")
+                complete = False
                 break
             items = ((d.get("result") or {}).get("items")) or []
             if not items:
@@ -153,7 +168,43 @@ def fetch_candidates(target: Dict[str, str], pages: int) -> List[Tuple[str, str]
                 if cid and u and ("cid=" in u.lower() or "cid%3d" in u.lower()):
                     out[cid] = u
             time.sleep(API_SLEEP)
-    return list(out.items())
+    return list(out.items()), complete
+
+
+def _cache_key(target: Dict[str, str]) -> str:
+    return (f"{KEY_PREFIX}_cache/candidates_{target.get('site', '')}_"
+            f"{target.get('service', '')}_{target['floor']}.json.gz")
+
+
+def load_candidates(s3, target: Dict[str, str], pages: int, save: bool = True) -> List[Tuple[str, str]]:
+    """候補一覧を返す。新しいキャッシュがあれば、それに新着だけ取り直して前に足す。"""
+    key = _cache_key(target)
+    try:
+        o = s3.get_object(Bucket=core.R2_BUCKET, Key=key)
+        d = json.loads(gzip.decompress(o["Body"].read()).decode("utf-8"))
+        age_h = (datetime.now(JST) - datetime.fromisoformat(d["generated_at"])).total_seconds() / 3600
+        cached = [(str(c), str(u)) for c, u in d.get("items") or []]
+        if cached and 0 <= age_h < CANDIDATE_CACHE_HOURS:
+            fresh, _ = fetch_candidates(target, FRESH_PAGES, sorts=("date",))
+            merged: Dict[str, str] = dict(fresh)
+            for c, u in cached:
+                merged.setdefault(c, u)
+            print(f"[capture]   {target['floor']}: 候補一覧はキャッシュを使用（{age_h:.1f}時間前・"
+                  f"{len(cached)}件）＋新着の取り直し {len(fresh)}件")
+            return list(merged.items())
+    except Exception:
+        pass
+
+    items, complete = fetch_candidates(target, pages)
+    if save and complete and items:
+        try:
+            body = gzip.compress(json.dumps({"generated_at": _now(), "items": items}, ensure_ascii=False).encode("utf-8"))
+            s3.put_object(Bucket=core.R2_BUCKET, Key=key, Body=body, ContentType="application/gzip")
+        except Exception as e:
+            print(f"[capture]   候補一覧のキャッシュ保存に失敗（撮影は続行）: {str(e)[:60]}")
+    elif not complete:
+        print(f"[capture]   {target['floor']}: API失敗で一覧が途中までなのでキャッシュしない")
+    return items
 
 
 def direct_url(u: str) -> str:
@@ -229,7 +280,7 @@ def main() -> None:
 
     todo: List[Tuple[str, str]] = []
     for t in targets:
-        cands = fetch_candidates(t, args.pages)
+        cands = load_candidates(s3, t, args.pages, save=not args.dry_run)
         new = [(c, u) for c, u in cands if c not in done]
         print(f"[capture] {t.get('site')}/{t.get('service')}/{t['floor']}: "
               f"候補 {len(cands)} / 未撮影 {len(new)}")
@@ -258,6 +309,11 @@ def main() -> None:
     t0 = time.time()
     ok = ng = 0
     for i, (cid, tach) in enumerate(todo, 1):
+        elapsed_min = (time.time() - _T_START) / 60
+        if elapsed_min > TIME_BUDGET_MIN:
+            print(f"[capture] 開始から{elapsed_min:.0f}分（上限 {TIME_BUDGET_MIN:.0f}分）に達したので打ち切り。"
+                  f"残り {len(todo) - i + 1} 件は次回")
+            break
         try:
             shots = core._screenshot_pages(direct_url(tach))
         except Exception as e:

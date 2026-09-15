@@ -59,6 +59,8 @@ jobs:
     runs-on: ubuntu-latest
     # 撮影は1件約43秒。400件で約4.8時間。6時間上限の手前で切る。
     # 索引は20件ごとに保存するので、時間切れで落ちてもそこまでの成果は残る。
+    # capture.py は開始から TIME_BUDGET_MIN(既定300分) で自分から止めて正常終了する。
+    # ここを縮めるときは TIME_BUDGET_MIN も合わせて縮めること。
     timeout-minutes: 330
     steps:
       - uses: actions/checkout@v4

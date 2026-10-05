@@ -1,0 +1,51 @@
+name: cleanup
+
+# サイトに載っていない作品の試し読み画像を R2 から消す。
+#
+# 撮影がフロア一覧の順に進んでいたため、サイトに無い作品まで撮っていた。
+# 2026-10-05 実測で 249,806オブジェクト・57GB（無料枠10GB）。公開は16,970作品。
+# 既定は試算のみ。削除は apply=true を明示したときだけ行う。
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "true で実際に削除（既定は試算のみ）"
+        required: false
+        default: "false"
+        type: string
+      limit:
+        description: "消す作品数の上限（0で全部）"
+        required: false
+        default: "0"
+        type: string
+
+concurrency:
+  group: capture-r2      # 撮影と同時に走らせない
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r capture/requirements.txt
+
+      - name: Cleanup unused samples
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_PUBLIC_BASE: ${{ secrets.R2_PUBLIC_BASE }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          KEY_PREFIX: ${{ secrets.KEY_PREFIX }}
+          INDEX_KEY: ${{ secrets.INDEX_KEY }}
+          DMM_API_ID: ${{ secrets.DMM_API_ID }}
+          DMM_AFFILIATE_ID: ${{ secrets.DMM_AFFILIATE_ID }}
+        run: |
+          APPLY=""
+          if [ "${{ inputs.apply }}" = "true" ]; then APPLY="--apply"; fi
+          python capture/cleanup.py $APPLY --limit "${{ inputs.limit }}"

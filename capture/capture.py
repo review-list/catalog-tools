@@ -63,12 +63,13 @@ import argparse
 import gzip
 import json
 import os
+import re
 import sys
 import time
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import capture_core as core
 
@@ -225,6 +226,51 @@ def direct_url(u: str) -> str:
     return u
 
 
+PUBLISHED_SITEMAP = (os.getenv("PUBLISHED_SITEMAP") or "https://manga.sakuhin-navi.com/sitemap.xml").strip()
+
+
+def load_published_ids() -> Optional[Set[str]]:
+    """サイトが実際に公開している作品の content_id を集める。
+
+    ## なぜ要るか
+
+    撮影はDMMのフロア一覧の順に進むので、サイトに載っていない作品まで撮っていた。
+    2026-10-05 時点で撮影済み 37,003 作品に対し、catalog-2 の公開は 16,626 作品。
+    差分の2万作品ぶんの画像（R2で57GB・月110円）は1枚も使われていない。
+
+    公開ページはサイトマップに出るので、そこから拾えば**公開が増えれば自動で追従**する。
+    取得に失敗したら None を返し、呼び出し側は従来どおり全件を対象にする（撮影を止めない）。
+
+    PUBLISHED_SITEMAP="" を渡すと、この絞り込みを無効にできる。
+    """
+    if not PUBLISHED_SITEMAP:
+        return None
+    try:
+        import urllib.request
+
+        def get(u: str) -> str:
+            req = urllib.request.Request(u, headers={"User-Agent": "catalog-tools/1.0"})
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return r.read().decode("utf-8", "replace")
+
+        body = get(PUBLISHED_SITEMAP)
+        locs = re.findall(r"<loc>([^<]+)</loc>", body)
+        pages = [u for u in locs if u.endswith(".xml")] or [PUBLISHED_SITEMAP]
+        ids: Set[str] = set()
+        for u in pages:
+            doc = body if u == PUBLISHED_SITEMAP else get(u)
+            for w in re.findall(r"<loc>[^<]*/works/([^/<]+)/?</loc>", doc):
+                ids.add(w.strip())
+        if len(ids) < 1000:
+            print(f"[capture] 公開作品の取得が少なすぎます（{len(ids)}件）。絞り込みは行いません", file=sys.stderr)
+            return None
+        print(f"[capture] 公開中の作品 {len(ids):,} 件をサイトマップから取得（これ以外は撮らない）")
+        return ids
+    except Exception as e:
+        print(f"[capture] 公開作品の取得に失敗（絞り込みなしで続行）: {str(e)[:70]}", file=sys.stderr)
+        return None
+
+
 def load_index(s3) -> Dict[str, Any]:
     try:
         o = s3.get_object(Bucket=core.R2_BUCKET, Key=INDEX_KEY)
@@ -278,12 +324,20 @@ def main() -> None:
     done = set(idx["items"].keys())
     print(f"[capture] 撮影済み {len(done)} 件（index: {INDEX_KEY}）")
 
+    published = load_published_ids()
+
     todo: List[Tuple[str, str]] = []
     for t in targets:
         cands = load_candidates(s3, t, args.pages, save=not args.dry_run)
         new = [(c, u) for c, u in cands if c not in done]
+        skipped = 0
+        if published is not None:
+            before = len(new)
+            new = [(c, u) for c, u in new if c in published]
+            skipped = before - len(new)
         print(f"[capture] {t.get('site')}/{t.get('service')}/{t['floor']}: "
-              f"候補 {len(cands)} / 未撮影 {len(new)}")
+              f"候補 {len(cands)} / 未撮影 {len(new) + skipped}"
+              + (f" / うちサイト未掲載のため除外 {skipped}" if skipped else ""))
         todo.extend(new)
 
     # 重複除去（フロアをまたいで同じ作品が出ることがある）

@@ -18,6 +18,11 @@ on:
         required: false
         default: "0"
         type: string
+      stats:
+        description: "true でバケット全体の件数・容量を数えるだけ"
+        required: false
+        default: "false"
+        type: string
 
 concurrency:
   # 撮影と**同じグループ**にする。索引(samples_index.json)を両方が書くので、
@@ -48,6 +53,10 @@ jobs:
           DMM_API_ID: ${{ secrets.DMM_API_ID }}
           DMM_AFFILIATE_ID: ${{ secrets.DMM_AFFILIATE_ID }}
         run: |
+          if [ "${{ inputs.stats }}" = "true" ]; then
+            python capture/cleanup.py --stats
+            exit 0
+          fi
           APPLY=""
           if [ "${{ inputs.apply }}" = "true" ]; then APPLY="--apply"; fi
           python capture/cleanup.py $APPLY --limit "${{ inputs.limit }}"

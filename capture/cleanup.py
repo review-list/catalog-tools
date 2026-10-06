@@ -58,6 +58,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="サイトに載っていない作品の画像をR2から消す")
     ap.add_argument("--apply", action="store_true", help="実際に削除する（既定は試算のみ）")
     ap.add_argument("--limit", type=int, default=0, help="消す作品数の上限（0で全部）")
+    ap.add_argument("--stats", action="store_true", help="バケット全体の件数と容量を数えて終わる")
     args = ap.parse_args()
 
     ak = (os.getenv("R2_ACCESS_KEY_ID") or "").strip()
@@ -65,6 +66,15 @@ def main() -> int:
     if not (ak and sk and core.R2_BUCKET and core.R2_ACCOUNT_ID):
         print("[cleanup] R2の設定が足りません", file=sys.stderr)
         return 1
+
+    if args.stats:
+        s3 = core._make_s3(ak, sk)
+        n = size = 0
+        for o in iter_objects(s3, ""):
+            n += 1
+            size += o["Size"]
+        print(f"[cleanup] バケット全体: {n:,} オブジェクト / {size/1024**3:.2f} GB")
+        return 0
 
     published = load_published_ids()
     if published is None:

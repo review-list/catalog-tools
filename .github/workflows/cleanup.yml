@@ -20,13 +20,15 @@ on:
         type: string
 
 concurrency:
-  group: capture-r2      # 撮影と同時に走らせない
+  # 撮影と**同じグループ**にする。索引(samples_index.json)を両方が書くので、
+  # 同時に走ると片方の更新が消える。別グループにしていたのは誤り。
+  group: capture
   cancel-in-progress: false
 
 jobs:
   cleanup:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

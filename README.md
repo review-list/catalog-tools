@@ -59,3 +59,15 @@ DMM の商品情報API は電子書籍について `tachiyomi.affiliateURL`（�
 - **サイト側リポジトリへの認証情報を持たない。** 結果はストレージに書き、
   サイト側が取りに来る
 - Actions のログも公開される。出力に識別情報を含めない
+
+## ライブチャットのオンライン人数（DMMとは無関係）
+
+`livechat/counts.py` と `.github/workflows/livechat_counts.yml`。
+DXLIVEが公開しているJSON（robots.txtで明示的に許可）から**人数だけ**を3時間おきに記録する。
+DTIの宣伝禁止ポリシー8条で「特定のパフォーマーについて宣伝目的の使用」が禁止されているため、
+**個人名は1件も保存しない**。
+
+ここに置いてあるのは、このリポジトリが public で Actions が無制限だから。
+private リポジトリで1日8回動かすと月240分かかり、無料枠に入らない。
+結果は `data/counts/YYYY-MM.jsonl` に追記され、catalog-engine 側が
+raw.githubusercontent.com から読んで chat.catalog-navi.com を生成する。

@@ -1,0 +1,51 @@
+# ライブチャットのオンライン人数を記録する（DMMの試し読み撮影とは無関係）。
+#
+# このリポジトリで動かしている理由: public なので Actions が無制限。
+# 時間帯別に取るには1日8回動かす必要があり、private リポジトリだと月240分かかって
+# 無料枠（2,000分）に入らない。
+#
+# 結果は data/counts/YYYY-MM.jsonl に追記され、catalog-engine 側が
+# raw.githubusercontent.com から読んで chat.catalog-navi.com を作る。
+# public リポジトリなので認証は要らない。
+name: ライブチャット人数の記録
+
+on:
+  schedule:
+    # 3時間おき（UTC）。GitHubの定時実行は数十分ずれることがあるが、
+    # 記録には**実際に取得した時刻**を入れているので集計は狂わない。
+    - cron: '0 */3 * * *'
+  workflow_dispatch:
+
+# 同時に走って追記がぶつからないようにする
+concurrency:
+  group: livechat-counts
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  counts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      # 標準ライブラリだけで動くので pip install は不要（起動を速くする）
+      - name: Collect
+        run: python3 livechat/counts.py
+
+      - name: Commit
+        run: |
+          if [ -z "$(git status --porcelain data/counts)" ]; then
+            echo "変化なし"; exit 0
+          fi
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add data/counts
+          git commit -q -m "livechat: オンライン人数 $(TZ=Asia/Tokyo date '+%m/%d %H:%M')"
+          for i in 1 2 3; do
+            if git push; then exit 0; fi
+            sleep $((i * 5)); git pull --rebase || true
+          done
+          echo "::error::人数記録の push に失敗した"; exit 1

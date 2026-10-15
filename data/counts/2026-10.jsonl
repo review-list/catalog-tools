@@ -2,3 +2,5 @@
 {"t":"2026-10-15T15:22:42+09:00","hour":15,"dow":3,"service":"dxlive","scope":"all","online":86,"free":22,"busy":64}
 {"t":"2026-10-15T15:23:17+09:00","hour":15,"dow":3,"service":"dxlive","scope":"jp","online":35,"free":14,"busy":21}
 {"t":"2026-10-15T15:23:17+09:00","hour":15,"dow":3,"service":"dxlive","scope":"all","online":86,"free":27,"busy":59}
+{"t":"2026-10-15T22:50:11+09:00","hour":22,"dow":3,"service":"dxlive","scope":"jp","online":83,"free":31,"busy":52}
+{"t":"2026-10-15T22:50:11+09:00","hour":22,"dow":3,"service":"dxlive","scope":"all","online":121,"free":39,"busy":82}

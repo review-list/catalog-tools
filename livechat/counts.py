@@ -28,6 +28,7 @@ import argparse
 import json
 import re
 import sys
+import time
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -45,14 +46,29 @@ TARGETS = [
 ]
 
 
-def fetch(url: str) -> str | None:
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "ja"})
-        with urllib.request.urlopen(req, timeout=40) as r:
-            return r.read().decode("utf-8", "replace")
-    except Exception as e:
-        print(f"[counts] 取得失敗 {url}: {str(e)[:80]}", file=sys.stderr)
-        return None
+def fetch(url: str, tries: int = 3) -> str | None:
+    """取得する。403が返ることがあるので間を空けて数回試す。
+
+    DXLIVEは断続的に403を返す（2026-10-16 実測で7回中2回）。
+    ブラウザに近いヘッダを付けると通りやすい。
+    """
+    headers = {
+        "User-Agent": UA,
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Accept-Language": "ja,en;q=0.8",
+        "Referer": re.sub(r"^(https?://[^/]+).*", r"\1/", url),
+    }
+    last = ""
+    for i in range(tries):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=40) as r:
+                return r.read().decode("utf-8", "replace")
+        except Exception as e:
+            last = str(e)[:80]
+            if i < tries - 1:
+                time.sleep(5 * (i + 1))
+    print(f"[counts] 取得失敗 {url}: {last}", file=sys.stderr)
+    return None
 
 
 def parse_js_var(text: str):
@@ -72,6 +88,24 @@ def size_of(v) -> int:
     if isinstance(v, dict):
         return len(v)
     return 0
+
+
+def last_recorded() -> datetime | None:
+    """最後に記録できた時刻。ファイルが無ければ None。"""
+    if not OUT_DIR.is_dir():
+        return None
+    times = []
+    for f in sorted(OUT_DIR.glob("*.jsonl"))[-2:]:
+        for line in f.read_text(encoding="utf-8").splitlines()[-200:]:
+            if not line.strip():
+                continue
+            try:
+                t = json.loads(line).get("t")
+                if t:
+                    times.append(datetime.fromisoformat(t))
+            except Exception:
+                continue
+    return max(times) if times else None
 
 
 def main() -> int:
@@ -98,8 +132,18 @@ def main() -> int:
                if "error" not in row else row["error"]))
 
     if all("error" in r for r in rows):
-        print("[counts] 全部失敗したので書きません", file=sys.stderr)
-        return 1
+        # 一時的な403で毎回赤くすると、本当に壊れたときに気づけなくなる。
+        # 直近24時間に1件も取れていない場合だけエラーにする。
+        last = last_recorded()
+        stale = last is None or (now - last).total_seconds() > 24 * 3600
+        msg = (f"直近の記録は {last.isoformat(timespec='minutes') if last else 'なし'}。"
+               "取得先がブロックしている可能性があります。")
+        if stale:
+            print(f"::error title=人数を24時間以上記録できていません::{msg}", file=sys.stderr)
+            return 1
+        print(f"::warning title=今回の人数取得に失敗::{msg}", file=sys.stderr)
+        print("[counts] 今回は取れませんでした（直近は取れているので続行）")
+        return 0
     if args.dry_run:
         print("[counts] --dry-run のため書きません")
         return 0

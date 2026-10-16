@@ -56,7 +56,10 @@ concurrency:
 
 jobs:
   capture:
-    runs-on: ubuntu-latest
+    # GitHub が 2026-10-19 から ubuntu-latest を Ubuntu 26 に切り替える。
+    # 4サイトの定時実行が同時に壊れるのを避けるため固定する。
+    # 26 で動くか確かめてから上げること。
+    runs-on: ubuntu-24.04
     # 撮影は1件約43秒。400件で約4.8時間。6時間上限の手前で切る。
     # 索引は20件ごとに保存するので、時間切れで落ちてもそこまでの成果は残る。
     # capture.py は開始から TIME_BUDGET_MIN(既定300分) で自分から止めて正常終了する。

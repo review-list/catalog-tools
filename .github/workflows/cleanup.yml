@@ -32,7 +32,10 @@ concurrency:
 
 jobs:
   cleanup:
-    runs-on: ubuntu-latest
+    # GitHub が 2026-10-19 から ubuntu-latest を Ubuntu 26 に切り替える。
+    # 4サイトの定時実行が同時に壊れるのを避けるため固定する。
+    # 26 で動くか確かめてから上げること。
+    runs-on: ubuntu-24.04
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4

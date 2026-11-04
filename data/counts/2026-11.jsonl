@@ -8,3 +8,5 @@
 {"t":"2026-11-03T06:14:13+09:00","hour":6,"dow":1,"service":"dxlive","scope":"all","online":63,"free":24,"busy":39}
 {"t":"2026-11-04T05:43:53+09:00","hour":5,"dow":2,"service":"dxlive","scope":"jp","online":13,"free":7,"busy":6}
 {"t":"2026-11-04T05:43:53+09:00","hour":5,"dow":2,"service":"dxlive","scope":"all","online":58,"free":25,"busy":33}
+{"t":"2026-11-04T19:15:35+09:00","hour":19,"dow":2,"service":"dxlive","scope":"jp","online":22,"free":10,"busy":12}
+{"t":"2026-11-04T19:15:35+09:00","hour":19,"dow":2,"service":"dxlive","scope":"all","online":68,"free":25,"busy":43}
